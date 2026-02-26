@@ -29,9 +29,8 @@ fi
 
 read -r -p "Enter Hestia admin username (USER): " USER
 read -r -p "Enter primary server domain (DOMAIN): " DOMAIN
-read -r -p "Enter webmail prefix alias (WEB_MAIL_ALIAS): " WEB_MAIL_ALIAS
 
-if [ -z "${USER:-}" ] || [ -z "${DOMAIN:-}" ] || [ -z "${WEB_MAIL_ALIAS:-}" ]; then
+if [ -z "${USER:-}" ] || [ -z "${DOMAIN:-}" ]; then
 	echo "All fields required"
 	exit 1
 fi
@@ -84,8 +83,11 @@ if [ -f "$CONFIG_FILE" ]; then
 	\$config["default_host"] = "ssl://$DOMAIN";
 	\$config["default_port"] = 993;
 
-	\$config["smtp_server"] = "tls://$DOMAIN";
+	\$config["smtp_server"] = "$DOMAIN";
 	\$config["smtp_port"] = 587;
+
+	\$config['smtp_user'] = '%u';
+	\$config['smtp_pass'] = '%p';
 
 	\$config["imap_conn_options"] = [
 		"ssl" => [
