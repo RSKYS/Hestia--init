@@ -41,15 +41,24 @@ if ! v-list-users plain | awk '{print $1}' | grep -qx "$USER"; then
 	exit 1
 fi
 
-v-add-letsencrypt-domain "$USER" "$DOMAIN" "" yes
-
-rm -f /usr/local/hestia/ssl/certificate.key
-rm -f /usr/local/hestia/ssl/certificate.crt
+echo "Due risk of breaking server, please get Let's Encrypt certificates via panel."
+echo "Waiting for 30 seconds.."
+sleep 30
+read -n 1 -s -p "Press any key to continue..."
 
 SSL_DIR="/home/$USER/conf/web/$DOMAIN/ssl"
 
-ln -sf "$SSL_DIR/$DOMAIN.key" /usr/local/hestia/ssl/certificate.key
-ln -sf "$SSL_DIR/$DOMAIN.crt" /usr/local/hestia/ssl/certificate.crt
+if [ -d $SSL_DIR ]; then
+	rm -f /usr/local/hestia/ssl/certificate.key
+	rm -f /usr/local/hestia/ssl/certificate.crt
+
+	ln -sf "$SSL_DIR/$DOMAIN.key" /usr/local/hestia/ssl/certificate.key
+	ln -sf "$SSL_DIR/$DOMAIN.crt" /usr/local/hestia/ssl/certificate.crt
+else
+	echo "Something went wrong getting certificate.."
+	echo "Bye."
+	exit 1
+fi
 
 CONFIG_FILE="/etc/roundcube/config.inc.php"
 
@@ -107,10 +116,6 @@ if [ -f "$CONFIG_FILE" ]; then
 
 	EOF
 fi
-
-v-restart-web || true
-v-restart-proxy || true
-v-restart-dns || true
 
 read -r -p "Reboot now? [Y/n]: " RB
 if [ "${RB:-Y}" != "n" ] && [ "${RB:-Y}" != "N" ]; then
