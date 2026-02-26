@@ -30,7 +30,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/pha
 - Updates hostname and system aliases in Hestia.
 - Disables system backups.
 - Restarts Hestia service.
-- Prompts for a reboot (required).
+- Prompts for a reboot.
 
 ## Run Phase Two
 
@@ -55,10 +55,11 @@ bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/pha
 - Creates `ns1` and `ns2` A records.
 - Replaces the Hestia SSL cert with the domain cert.
 - Rewrites Roundcube configuration for SSL/TLS settings.
-- Restarts web/proxy/dns services.
-- Prompts for a reboot (required).
+- Prompts for a reboot.
 
 ## Pre-Phase Script
+
+> **Run this as root.**
 
 ```bash
 
@@ -70,7 +71,6 @@ The `pre-phase` script prepares the server before running Phase One and Phase Tw
 
 ### What it configures
 
-- **Sysctl tuning:** overwrites `/etc/sysctl.conf` with optimized kernel/network settings and applies them.
 - **SSH port change:** updates `/etc/ssh/sshd_config.d` to set the chosen port and allow root/password auth, then restarts SSH.
 - **Hostname configuration:** sets the system hostname to the provided domain.
 - **Hestia installation:** downloads the installer, replaces port `8083` with the chosen Hestia port, and runs the installer.
