@@ -1,0 +1,125 @@
+#!/bin/bash
+
+# Copyright 2025, Pouria Rezaei <Pouria.rz@outlook.com>
+# Hestia initiate for full NS's takeover; Phase two.
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License at <http://www.gnu.org/licenses/> for
+# more details.
+
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+	echo "Run as root"
+	exit 1
+fi
+
+read -r -p "Enter Hestia admin username (USER): " USER
+read -r -p "Enter primary server domain (DOMAIN): " DOMAIN
+read -r -p "Enter webmail prefix alias (WEB_MAIL_ALIAS): " WEB_MAIL_ALIAS
+
+if [ -z "${USER:-}" ] || [ -z "${DOMAIN:-}" ] || [ -z "${WEB_MAIL_ALIAS:-}" ]; then
+	echo "All fields required"
+	exit 1
+fi
+
+if ! v-list-users plain | awk '{print $1}' | grep -qx "$USER"; then
+	echo "User does not exist"
+	exit 1
+fi
+
+v-add-domain "$USER" "$DOMAIN"
+
+v-add-letsencrypt-domain "$USER" "$DOMAIN" "" yes
+
+PUBLIC_IP="$(curl -s -4 --max-time 10 https://ifconfig.me || curl -s -4 --max-time 10 https://api.ipify.org || true)"
+
+case "$PUBLIC_IP" in
+	*[!0-9.]*|"") 
+		read -r -p "Enter public IPv4 manually: " PUBLIC_IP
+		;;
+esac
+
+v-add-dns-record "$USER" "$DOMAIN" ns1 A "$PUBLIC_IP"
+v-add-dns-record "$USER" "$DOMAIN" ns2 A "$PUBLIC_IP"
+
+rm -f /usr/local/hestia/ssl/certificate.key
+rm -f /usr/local/hestia/ssl/certificate.crt
+
+SSL_DIR="/home/$USER/conf/web/$DOMAIN/ssl"
+
+ln -sf "$SSL_DIR/$DOMAIN.key" /usr/local/hestia/ssl/certificate.key
+ln -sf "$SSL_DIR/$DOMAIN.crt" /usr/local/hestia/ssl/certificate.crt
+
+CONFIG_FILE="/etc/roundcube/config.inc.php"
+
+# Fixes for Roundcube.. yeah fuck you
+
+if [ -f "$CONFIG_FILE" ]; then
+	EXISTING_DB_DSNW="$(sed -n 's/^ *\$config\["db_dsnw"\] *= *"\(.*\)" *; *$/\1/p' "$CONFIG_FILE")"
+	EXISTING_DES_KEY="$(sed -n 's/^ *\$config\["des_key"\] *= *"\(.*\)" *; *$/\1/p' "$CONFIG_FILE")"
+
+	cat > "$CONFIG_FILE" <<-EOF
+	<?php
+
+	\$config["db_dsnw"] = "$EXISTING_DB_DSNW";
+
+	\$config["imap_debug"] = true;
+	\$config["smtp_debug"] = true;
+	\$config["log_driver"] = "file";
+	\$config["log_dir"] = "/var/log/roundcube/";
+	\$config["log_session"] = true;
+
+	\$config["des_key"] = "$EXISTING_DES_KEY";
+
+	\$config["default_host"] = "ssl://$DOMAIN";
+	\$config["default_port"] = 993;
+
+	\$config["smtp_server"] = "tls://$DOMAIN";
+	\$config["smtp_port"] = 587;
+
+	\$config["imap_conn_options"] = [
+		"ssl" => [
+			"verify_peer"       => false,
+			"verify_peer_name"  => false,
+			"verify_depth"      => 3,
+			"cafile"            => "/etc/ssl/certs/ca-certificates.crt",
+		],
+	];
+
+	\$config["smtp_conn_options"] = [
+		"ssl" => [
+			"verify_peer"       => false,
+			"verify_peer_name"  => false,
+			"verify_depth"      => 3,
+			"cafile"            => "/etc/ssl/certs/ca-certificates.crt",
+		],
+	];
+
+	\$config["username_domain"] = "$DOMAIN";
+
+	\$config["smtp_log"] = false;
+	\$config["plugins"] = ["password", "newmail_notifier", "zipdownload", "archive"];
+
+	\$config["auto_create_user"] = true;
+
+	\$config["support_url"] = "";
+
+	EOF
+fi
+
+v-restart-web || true
+v-restart-proxy || true
+v-restart-dns || true
+
+read -r -p "Reboot now? [Y/n]: " RB
+if [ "${RB:-Y}" = "n" ] || [ "${RB:-Y}" = "N" ]; then
+	reboot
+fi
