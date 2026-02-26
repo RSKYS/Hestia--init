@@ -12,7 +12,9 @@ You will run **Phase One**, reboot, then run **Phase Two**, and reboot again.
 > **Run this as root.**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RSKYS/Hestia--init/master/phase-one | bash
+
+
+bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/phase-one)
 ```
 
 ### Phase One Prompts
@@ -35,7 +37,9 @@ curl -fsSL https://raw.githubusercontent.com/RSKYS/Hestia--init/master/phase-one
 > **Run this as root (after reboot).**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RSKYS/Hestia--init/master/phase-two | bash
+
+
+bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/phase-two)
 ```
 
 ### Phase Two Prompts
@@ -53,3 +57,20 @@ curl -fsSL https://raw.githubusercontent.com/RSKYS/Hestia--init/master/phase-two
 - Rewrites Roundcube configuration for SSL/TLS settings.
 - Restarts web/proxy/dns services.
 - Prompts for a reboot (required).
+
+## Pre-Phase Script
+
+```bash
+
+
+bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/pre-phase)
+```
+
+The `pre-phase` script prepares the server before running Phase One and Phase Two. It applies sysctl tuning, updates SSH configuration and port, sets the hostname, removes old kernels, and installs Hestia.
+
+### What it configures
+
+- **Sysctl tuning:** overwrites `/etc/sysctl.conf` with optimized kernel/network settings and applies them.
+- **SSH port change:** updates `/etc/ssh/sshd_config.d` to set the chosen port and allow root/password auth, then restarts SSH.
+- **Hostname configuration:** sets the system hostname to the provided domain.
+- **Hestia installation:** downloads the installer, replaces port `8083` with the chosen Hestia port, and runs the installer.

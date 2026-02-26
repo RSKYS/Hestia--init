@@ -1,0 +1,238 @@
+#!/bin/bash
+
+# Copyright 2025, Pouria Rezaei <Pouria.rz@outlook.com>
+# Hestia initiate for full NS's takeover; Before anything begins.
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License at <http://www.gnu.org/licenses/> for
+# more details.
+
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+	echo "Run as root"
+	exit 1
+fi
+
+if [ ! -f /etc/os-release ]; then
+	echo "Missing /etc/os-release"
+	exit 1
+fi
+
+OS_ID="$(. /etc/os-release && echo "${ID:-}")"
+if [ "$OS_ID" != "ubuntu" ]; then
+	echo "Unsupported OS! (Ubuntu only)"
+	exit 1
+fi
+
+read -r -p "Enter SSH port (SSH_PORT): " SSH_PORT
+read -r -p "Enter domain (DOMAIN): " DOMAIN
+read -r -p "Enter Hestia port (HESTIA_PORT): " HESTIA_PORT
+
+echo "Change Ubuntu APT mirror"
+while true; do
+	read -r -p "Enter new mirror URL (example: https://archive.ubuntu.com/ubuntu): " MIRROR
+	MIRROR="${MIRROR%/}"
+	if [ -z "$MIRROR" ]; then
+		echo "Error: mirror cannot be empty."
+		continue
+	fi
+	case "$MIRROR" in
+		http://*|https://*) : ;;
+		*) echo "Error: mirror must start with http:// or https://"; continue ;;
+	esac
+	if [ "${MIRROR%/ubuntu}" = "$MIRROR" ]; then
+		echo "Warning: mirror usually ends with /ubuntu — please double-check"
+		read -r -p "Continue anyway? (y/N): " CONFIRM
+		case "$CONFIRM" in
+			[Yy]*) : ;;
+			*) continue ;;
+		esac
+	fi
+	break
+done
+
+if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+	SOURCE_FILE="/etc/apt/sources.list.d/ubuntu.sources"
+else
+	SOURCE_FILE="/etc/apt/sources.list"
+	if [ ! -f "$SOURCE_FILE" ]; then
+		echo "Error: Neither /etc/apt/sources.list.d/ubuntu.sources nor /etc/apt/sources.list was found."
+		exit 1
+	fi
+fi
+
+sed -i -E \
+	-e "s#(http|https)://[^[:space:]]+/ubuntu#${MIRROR}#g" \
+	-e "s#(http|https)://[^[:space:]]+(security|ports)\.ubuntu\.com#${MIRROR}#g" \
+	"$SOURCE_FILE"
+
+if [ -z "${SSH_PORT:-}" ] || [ -z "${DOMAIN:-}" ] || [ -z "${HESTIA_PORT:-}" ]; then
+	echo "All fields required"
+	exit 1
+fi
+
+case "$SSH_PORT" in
+	""|*[!0-9]*) echo "Invalid SSH port"; exit 1 ;;
+esac
+
+if [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
+	echo "Invalid SSH port"
+	exit 1
+fi
+
+case "$HESTIA_PORT" in
+	""|*[!0-9]*) echo "Invalid Hestia port"; exit 1 ;;
+esac
+
+if [ "$HESTIA_PORT" -lt 1 ] || [ "$HESTIA_PORT" -gt 65535 ]; then
+	echo "Invalid Hestia port"
+	exit 1
+fi
+
+case "$DOMAIN" in
+	*[!a-zA-Z0-9.-]*|""|.*|*-*|*..*) echo "Invalid domain"; exit 1 ;;
+esac
+
+echo "Writing /etc/sysctl.conf"
+cat > /etc/sysctl.conf <<EOF
+fs.file-max = 2097152
+net.core.default_qdisc = fq
+net.core.netdev_max_backlog = 250000
+net.core.rmem_default = 67108864
+net.core.rmem_max = 268435456
+net.core.somaxconn = 65535
+net.core.wmem_default = 67108864
+net.core.wmem_max = 268435456
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.all.forwarding = 1
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.ip_forward = 1
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_fin_timeout = 15
+net.ipv4.tcp_keepalive_intvl = 60
+net.ipv4.tcp_keepalive_probes = 10
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.tcp_mtu_probing = 1
+net.ipv4.tcp_rmem = 4096 87380 268435456
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_syncookies = 1
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_window_scaling = 1
+net.ipv4.tcp_wmem = 4096 65536 268435456
+net.ipv4.udp_mem = 1000000 1333333 2000000
+net.ipv4.udp_rmem_min = 16384
+net.ipv4.udp_wmem_min = 16384
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF
+
+echo "Applying sysctl configuration"
+sysctl -p
+
+echo "Updating packages"
+apt update && apt dist-upgrade --auto-remove -y
+
+SSH_CONF_DIR="/etc/ssh/sshd_config.d"
+TARGET_CONF="$SSH_CONF_DIR/50-cloud-init.conf"
+CONF_EXISTS=false
+
+if ls "$SSH_CONF_DIR"/*.conf >/dev/null 2>&1; then
+	CONF_EXISTS=true
+	TARGET_CONF="$(ls -1 "$SSH_CONF_DIR"/*.conf | head -n 1)"
+fi
+
+echo "Configuring SSH"
+mkdir -p "$SSH_CONF_DIR"
+
+ensure_directive() {
+	local file="$1"
+	local directive="$2"
+	local value="$3"
+	local line="$directive $value"
+	if grep -Fxq "$line" "$file"; then
+		return
+	fi
+	sed -i -E "/^\\s*${directive}\\s+/d" "$file"
+	echo "$line" >> "$file"
+}
+
+if [ "$CONF_EXISTS" = true ]; then
+	for conf in "$SSH_CONF_DIR"/*.conf; do
+		[ -e "$conf" ] || continue
+		if [ "$conf" != "$TARGET_CONF" ]; then
+			sed -i -E '/^\s*Port\s+/d' "$conf"
+			sed -i -E '/^\s*PermitRootLogin\s+/d' "$conf"
+			sed -i -E '/^\s*PasswordAuthentication\s+/d' "$conf"
+		fi
+		done
+
+	ensure_directive "$TARGET_CONF" "Port" "$SSH_PORT"
+	ensure_directive "$TARGET_CONF" "PermitRootLogin" "yes"
+	ensure_directive "$TARGET_CONF" "PasswordAuthentication" "yes"
+else
+	: > "$TARGET_CONF"
+	ensure_directive "$TARGET_CONF" "Port" "$SSH_PORT"
+	ensure_directive "$TARGET_CONF" "PermitRootLogin" "yes"
+	ensure_directive "$TARGET_CONF" "PasswordAuthentication" "yes"
+fi
+
+echo "Purging packages"
+apt purge openssh* snapd needrestart ufw --auto-remove -y
+
+echo "Setting hostname"
+hostnamectl set-hostname "$DOMAIN"
+
+echo "Installing OpenSSH server"
+apt update
+apt install -y openssh-server
+
+echo "Cleaning old kernels"
+latest_kernels=$( {
+	dpkg-query -W -f='${Package}\n' 'linux-image-[0-9]*' | sort -V | tail -n1
+	dpkg-query -W -f='${Package}\n' 'linux-image-unsigned-[0-9]*' | sort -V | tail -n1
+	echo "linux-image-generic"
+} )
+
+all_kernels=$(dpkg-query -W -f='${Package}\n' 'linux-image-[0-9]*')
+
+old_kernels=$(comm -23 \
+	<(echo "$all_kernels" | sort) \
+	<(echo "$latest_kernels" | sort)
+)
+
+if [ -n "$old_kernels" ]; then
+	apt purge linux*$(echo "$old_kernels" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+' | sort -fu)-* --auto-remove -y
+	update-grub
+fi
+
+echo "Downloading Hestia installer"
+wget -O hst-install-ubuntu.sh https://raw.githubusercontent.com/RSKYS/hestiacp/release/install/hst-install-ubuntu.sh
+chmod 777 hst-install-ubuntu.sh
+
+echo "Updating Hestia port"
+sed -i -E "s/\b8083\b/${HESTIA_PORT}/g" hst-install-ubuntu.sh
+
+echo "Set new root password"
+passwd root
+
+echo "Run Hestia after reboot, dropped the script at ~/"
+
+read -r -p "Reboot now? [Y/n]: " RB
+if [ "${RB:-Y}" != "n" ] && [ "${RB:-Y}" != "N" ]; then
+	reboot
+fi

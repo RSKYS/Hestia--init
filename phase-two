@@ -21,6 +21,12 @@ if [ "$(id -u)" -ne 0 ]; then
 	exit 1
 fi
 
+OS_ID="$(. /etc/os-release && echo "${ID:-}")"
+if [ "$OS_ID" != "ubuntu" ]; then
+	echo "Unsupported OS! (Ubuntu only)"
+	exit 1
+fi
+
 read -r -p "Enter Hestia admin username (USER): " USER
 read -r -p "Enter primary server domain (DOMAIN): " DOMAIN
 read -r -p "Enter webmail prefix alias (WEB_MAIL_ALIAS): " WEB_MAIL_ALIAS
@@ -120,6 +126,6 @@ v-restart-proxy || true
 v-restart-dns || true
 
 read -r -p "Reboot now? [Y/n]: " RB
-if [ "${RB:-Y}" = "n" ] || [ "${RB:-Y}" = "N" ]; then
+if [ "${RB:-Y}" != "n" ] && [ "${RB:-Y}" != "N" ]; then
 	reboot
 fi
