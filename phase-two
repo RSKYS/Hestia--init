@@ -41,20 +41,7 @@ if ! v-list-users plain | awk '{print $1}' | grep -qx "$USER"; then
 	exit 1
 fi
 
-v-add-domain "$USER" "$DOMAIN"
-
 v-add-letsencrypt-domain "$USER" "$DOMAIN" "" yes
-
-PUBLIC_IP="$(curl -s -4 --max-time 10 https://ifconfig.me || curl -s -4 --max-time 10 https://api.ipify.org || true)"
-
-case "$PUBLIC_IP" in
-	*[!0-9.]*|"") 
-		read -r -p "Enter public IPv4 manually: " PUBLIC_IP
-		;;
-esac
-
-v-add-dns-record "$USER" "$DOMAIN" ns1 A "$PUBLIC_IP"
-v-add-dns-record "$USER" "$DOMAIN" ns2 A "$PUBLIC_IP"
 
 rm -f /usr/local/hestia/ssl/certificate.key
 rm -f /usr/local/hestia/ssl/certificate.crt
