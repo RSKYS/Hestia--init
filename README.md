@@ -13,7 +13,6 @@ You will run **Phase One**, reboot, then run **Phase Two**, and reboot again.
 
 ```bash
 
-
 bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/phase-one)
 ```
 
@@ -37,7 +36,6 @@ bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/pha
 > **Run this as root (after reboot).**
 
 ```bash
-
 
 bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/phase-two)
 ```
@@ -63,14 +61,15 @@ bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/pha
 
 ```bash
 
-
 bash <(wget -qO- https://raw.githubusercontent.com/RSKYS/Hestia--init/master/pre-phase)
 ```
 
-The `pre-phase` script prepares the server before running Phase One and Phase Two. It applies sysctl tuning, updates SSH configuration and port, sets the hostname, removes old kernels, and installs Hestia.
+The `pre-phase` script prepares the server before running Phase One and Phase Two. It applies sysctl tuning, updates SSH configuration and port, sets the hostname, removes old kernels, and prepares Hestia installer.
 
-### What it configures
 
-- **SSH port change:** updates `/etc/ssh/sshd_config.d` to set the chosen port and allow root/password auth, then restarts SSH.
-- **Hostname configuration:** sets the system hostname to the provided domain.
-- **Hestia installation:** downloads the installer, replaces port `8083` with the chosen Hestia port, and runs the installer.
+> **A little bit step after reboot, though:**
+
+```bash
+
+./hst-install-ubuntu.sh --force
+```
