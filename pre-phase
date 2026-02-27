@@ -36,6 +36,71 @@ read -r -p "Enter SSH port (SSH_PORT): " SSH_PORT
 read -r -p "Enter domain (DOMAIN): " DOMAIN
 read -r -p "Enter Hestia port (HESTIA_PORT): " HESTIA_PORT
 
+if [ -z "${SSH_PORT:-}" ] || [ -z "${DOMAIN:-}" ] || [ -z "${HESTIA_PORT:-}" ]; then
+	echo "All fields required"
+	exit 1
+fi
+
+case "$SSH_PORT" in
+	""|*[!0-9]*) echo "Invalid SSH port"; exit 1 ;;
+esac
+
+if [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
+	echo "Invalid SSH port"
+	exit 1
+fi
+
+case "$HESTIA_PORT" in
+	""|*[!0-9]*) echo "Invalid Hestia port"; exit 1 ;;
+esac
+
+if [ "$HESTIA_PORT" -lt 1 ] || [ "$HESTIA_PORT" -gt 65535 ]; then
+	echo "Invalid Hestia port"
+	exit 1
+fi
+
+case "$DOMAIN" in
+	*[!a-zA-Z0-9.-]*|""|.*|*-*|*..*) echo "Invalid domain"; exit 1 ;;
+esac
+
+echo "Change Ubuntu APT mirror"
+while true; do
+	read -r -p "Enter new mirror URL (example: https://archive.ubuntu.com/ubuntu): " MIRROR
+	MIRROR="${MIRROR%/}"
+	if [ -z "$MIRROR" ]; then
+		echo "Error: mirror cannot be empty."
+		continue
+	fi
+	case "$MIRROR" in
+		http://*|https://*) : ;;
+		*) echo "Error: mirror must start with http:// or https://"; continue ;;
+	esac
+	if [ "${MIRROR%/ubuntu}" = "$MIRROR" ]; then
+		echo "Warning: mirror usually ends with /ubuntu — please double-check"
+		read -r -p "Continue anyway? (y/N): " CONFIRM
+		case "$CONFIRM" in
+			[Yy]*) : ;;
+			*) continue ;;
+		esac
+	fi
+	break
+done
+
+if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+	SOURCE_FILE="/etc/apt/sources.list.d/ubuntu.sources"
+else
+	SOURCE_FILE="/etc/apt/sources.list"
+	if [ ! -f "$SOURCE_FILE" ]; then
+		echo "Error: Neither /etc/apt/sources.list.d/ubuntu.sources nor /etc/apt/sources.list was found."
+		exit 1
+	fi
+fi
+
+sed -i -E \
+	-e "s#(http|https)://[^[:space:]]+/ubuntu#${MIRROR}#g" \
+	-e "s#(http|https)://[^[:space:]]+(security|ports)\.ubuntu\.com#${MIRROR}#g" \
+	"$SOURCE_FILE"
+
 echo "Applying sysctl configuration"
 cat > /etc/sysctl.conf <<EOF
 fs.file-max = 2097152
@@ -76,71 +141,6 @@ net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 EOF
 sysctl -p
-
-echo "Change Ubuntu APT mirror"
-while true; do
-	read -r -p "Enter new mirror URL (example: https://archive.ubuntu.com/ubuntu): " MIRROR
-	MIRROR="${MIRROR%/}"
-	if [ -z "$MIRROR" ]; then
-		echo "Error: mirror cannot be empty."
-		continue
-	fi
-	case "$MIRROR" in
-		http://*|https://*) : ;;
-		*) echo "Error: mirror must start with http:// or https://"; continue ;;
-	esac
-	if [ "${MIRROR%/ubuntu}" = "$MIRROR" ]; then
-		echo "Warning: mirror usually ends with /ubuntu — please double-check"
-		read -r -p "Continue anyway? (y/N): " CONFIRM
-		case "$CONFIRM" in
-			[Yy]*) : ;;
-			*) continue ;;
-		esac
-	fi
-	break
-done
-
-if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
-	SOURCE_FILE="/etc/apt/sources.list.d/ubuntu.sources"
-else
-	SOURCE_FILE="/etc/apt/sources.list"
-	if [ ! -f "$SOURCE_FILE" ]; then
-		echo "Error: Neither /etc/apt/sources.list.d/ubuntu.sources nor /etc/apt/sources.list was found."
-		exit 1
-	fi
-fi
-
-sed -i -E \
-	-e "s#(http|https)://[^[:space:]]+/ubuntu#${MIRROR}#g" \
-	-e "s#(http|https)://[^[:space:]]+(security|ports)\.ubuntu\.com#${MIRROR}#g" \
-	"$SOURCE_FILE"
-
-if [ -z "${SSH_PORT:-}" ] || [ -z "${DOMAIN:-}" ] || [ -z "${HESTIA_PORT:-}" ]; then
-	echo "All fields required"
-	exit 1
-fi
-
-case "$SSH_PORT" in
-	""|*[!0-9]*) echo "Invalid SSH port"; exit 1 ;;
-esac
-
-if [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
-	echo "Invalid SSH port"
-	exit 1
-fi
-
-case "$HESTIA_PORT" in
-	""|*[!0-9]*) echo "Invalid Hestia port"; exit 1 ;;
-esac
-
-if [ "$HESTIA_PORT" -lt 1 ] || [ "$HESTIA_PORT" -gt 65535 ]; then
-	echo "Invalid Hestia port"
-	exit 1
-fi
-
-case "$DOMAIN" in
-	*[!a-zA-Z0-9.-]*|""|.*|*-*|*..*) echo "Invalid domain"; exit 1 ;;
-esac
 
 echo "Updating packages"
 apt update
@@ -228,6 +228,13 @@ sed -i -E "s/\b8083\b/${HESTIA_PORT}/g" hst-install-ubuntu.sh
 
 echo "Set new root password"
 passwd root
+
+awk -F: -v min="1000" -v me="$(whoami)" '$3>=min {print $1}' /etc/passwd | \
+while IFS= read -r user; do
+  [ "$user" = "$me" ] && continue
+  [ "$user" = "root" ] && continue
+  sudo deluser --remove-home --quiet -- "$user"
+done
 
 echo "Run Hestia after reboot, dropped the script at ~/"
 
