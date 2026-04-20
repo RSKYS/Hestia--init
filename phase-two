@@ -61,8 +61,6 @@ fi
 
 CONFIG_FILE="/etc/roundcube/config.inc.php"
 
-# Fixes for Roundcube.. yeah fuck you
-
 if [ -f "$CONFIG_FILE" ]; then
 	EXISTING_DB_DSNW="$(sed -n 's/^ *\$config\["db_dsnw"\] *= *"\(.*\)" *; *$/\1/p' "$CONFIG_FILE")"
 	EXISTING_DES_KEY="$(sed -n 's/^ *\$config\["des_key"\] *= *"\(.*\)" *; *$/\1/p' "$CONFIG_FILE")"
@@ -80,14 +78,16 @@ if [ -f "$CONFIG_FILE" ]; then
 
 	\$config["des_key"] = "$EXISTING_DES_KEY";
 
-	\$config["default_host"] = "ssl://$DOMAIN";
+	\$config["default_host"] = "ssl://localhost";
 	\$config["default_port"] = 993;
 
-	\$config["smtp_server"] = "$DOMAIN";
+	\$config["smtp_server"] = "localhost";
 	\$config["smtp_port"] = 587;
 
 	\$config['smtp_user'] = '%u';
 	\$config['smtp_pass'] = '%p';
+
+	\$config["username_domain"] = "%d";
 
 	\$config["imap_conn_options"] = [
 		"ssl" => [
@@ -107,9 +107,6 @@ if [ -f "$CONFIG_FILE" ]; then
 		],
 	];
 
-	\$config["username_domain"] = "$DOMAIN";
-
-	\$config["smtp_log"] = false;
 	\$config["plugins"] = ["password", "newmail_notifier", "zipdownload", "archive"];
 
 	\$config["auto_create_user"] = true;
